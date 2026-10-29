@@ -4,14 +4,6 @@ from urllib.parse import quote_plus
 import requests
 import streamlit as st
 
-def alternativne_odkazy(nazov: str) -> dict:
-    q = quote_plus(nazov)
-    return {
-        "🔎 Hľadať dabing / kde pozrieť": f"https://www.google.com/search?q={q}+dabing+kde+pozrieť",
-        "🎞️ ČSFD (dabing, tvorcovia, recenzie)": f"https://www.csfd.cz/hledat/?q={q}",
-        "📺 JustWatch": f"https://www.justwatch.com/sk/vyhladavanie?q={q}",
-    }
-
 # ---------------------------------------------------------------------------
 # Konfigurácia
 # ---------------------------------------------------------------------------
@@ -58,7 +50,7 @@ JAZYKY = {"sk": "slovenčina", "cs": "čeština", "en": "angličtina", "de": "ne
 
 
 # ---------------------------------------------------------------------------
-# TMDB volania
+# TMDB volania & Pomocné funkcie
 # ---------------------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def hladaj(dotaz: str, api_key: str) -> list[dict]:
@@ -85,9 +77,6 @@ def poskytovatelia(typ: str, tmdb_id: int, api_key: str) -> dict:
     return r.json().get("results", {})
 
 
-# ---------------------------------------------------------------------------
-# Pomocné funkcie
-# ---------------------------------------------------------------------------
 def najdi_platformu(nazov_poskytovatela: str) -> str | None:
     n = nazov_poskytovatela.lower()
     for platforma, (slova, _) in PLATFORMY.items():
@@ -97,7 +86,6 @@ def najdi_platformu(nazov_poskytovatela: str) -> str | None:
 
 
 def dostupnost(prov: dict, krajiny: list[str]) -> dict:
-    """Vráti {platforma: {'typy': set(...), 'krajiny': set(...)}} pre zvolené krajiny."""
     vysledok = {}
     for krajina in krajiny:
         data = prov.get(krajina, {})
@@ -118,6 +106,15 @@ def odkaz(sablona: str, dotaz: str) -> str:
 
 def justwatch_odkaz(dotaz: str, krajina: str) -> str:
     return f"https://www.justwatch.com/{krajina.lower()}/vyhladavanie?q={quote_plus(dotaz)}"
+
+
+def alternativne_odkazy(nazov: str) -> dict:
+    q = quote_plus(nazov)
+    return {
+        "🔎 Hľadať dabing / kde pozrieť": f"https://www.google.com/search?q={q}+dabing+kde+pozrieť",
+        "🎞️ ČSFD (dabing, tvorcovia, recenzie)": f"https://www.csfd.cz/hledat/?q={q}",
+        "📺 JustWatch": f"https://www.justwatch.com/sk/vyhladavanie?q={q}",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -141,8 +138,8 @@ with st.sidebar:
         st.warning("Chýba `TMDB_API_KEY`.")
         st.code('# .streamlit/secrets.toml\nTMDB_API_KEY = "váš_kľúč"', language="toml")
 
-    st.caption("Dostupnosť pochádza z TMDB (dáta JustWatch). Dostupnosť slovenského/českého dabingu si "
-               "overte priamo na platforme, TMDB ju po jednotlivých platformách neeviduje.")
+    st.caption("Dostupnosť pochádza z TMDB (dáta JustWatch).")
+
 
 # ---------------------------------------------------------------------------
 # Hlavná časť
@@ -206,14 +203,15 @@ for v in vysledky:
             if v.get("overview"):
                 st.write(v["overview"])
 
-st.markdown("**Hľadať ďalej:**")
-for popis, url in alternativne_odkazy(nazov).items():
-    st.link_button(popis, url)
-
             # Jazyky
-povodny = JAZYKY.get(v.get("original_language", ""), v.get("original_language", "neznámy"))
-hovorene = [JAZYKY.get(j.get("iso_639_1"), j.get("english_name", "")) for j in det.get("spoken_languages", [])]
-st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.join(hovorene)}" if hovorene else ""))
+            povodny = JAZYKY.get(v.get("original_language", ""), v.get("original_language", "neznámy"))
+            hovorene = [JAZYKY.get(j.get("iso_639_1"), j.get("english_name", "")) for j in det.get("spoken_languages", [])]
+            st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.join(hovorene)}" if hovorene else ""))
+
+            # Alternatívne odkazy (tlačidlá)
+            st.markdown("**Hľadať ďalej:**")
+            for popis, url in alternativne_odkazy(nazov).items():
+                st.link_button(popis, url)
 
             tab1, tab2 = st.tabs(["✅ Oficiálne platformy", "🆓 Legálne bezplatné zdroje"])
 
@@ -230,16 +228,12 @@ st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.
                             f"{', '.join(sorted(info['typy']))} ({', '.join(sorted(info['krajiny']))}) · "
                             f"[Otvoriť]({odkaz(sablona, nazov)})"
                         )
-                        st.caption("🗣️ Dabing a titulky: overte v detaile titulu na platforme.") if False else None
                     else:
                         p1.markdown(f"**{platforma}** ➖")
                         p2.markdown(f"Nenájdené v zvolených krajinách · [Hľadať ručne]({odkaz(sablona, nazov)})")
 
                 kr = krajiny_vyber[0] if krajiny_vyber else "SK"
-                st.markdown(f"🔎 [Všetky možnosti na JustWatch]({justwatch_odkaz(nazov, kr)}) – "
-                            "tam nájdete aj filter na jazyk zvuku a titulkov.")
-                st.caption("🗣️ Slovenský/český dabing a titulky sa líšia podľa titulu a platformy. "
-                           "Na platforme ich uvidíte v detaile titulu (ikona Zvuk a titulky).")
+                st.markdown(f"🔎 [Všetky možnosti na JustWatch]({justwatch_odkaz(nazov, kr)})")
 
             with tab2:
                 if not zobraz_legalne:
@@ -253,4 +247,4 @@ st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.
 if zobrazene == 0:
     st.warning("Nič sa nenašlo. Skúste iný názov alebo upravte filtre.")
 
-st.caption("Údaje poskytuje TMDB. Táto aplikácia nie je podporovaná ani certifikovaná TMDB.")
+st.caption("Údaje poskytuje TMDB.")
