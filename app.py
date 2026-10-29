@@ -211,9 +211,9 @@ for popis, url in alternativne_odkazy(nazov).items():
     st.link_button(popis, url)
 
             # Jazyky
-            povodny = JAZYKY.get(v.get("original_language", ""), v.get("original_language", "neznámy"))
-            hovorene = [JAZYKY.get(j.get("iso_639_1"), j.get("english_name", "")) for j in det.get("spoken_languages", [])]
-            st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.join(hovorene)}" if hovorene else ""))
+povodny = JAZYKY.get(v.get("original_language", ""), v.get("original_language", "neznámy"))
+hovorene = [JAZYKY.get(j.get("iso_639_1"), j.get("english_name", "")) for j in det.get("spoken_languages", [])]
+st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.join(hovorene)}" if hovorene else ""))
 
             tab1, tab2 = st.tabs(["✅ Oficiálne platformy", "🆓 Legálne bezplatné zdroje"])
 
