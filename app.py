@@ -24,7 +24,6 @@ def nacitaj_api_kluc() -> str:
 
 API_KEY = nacitaj_api_kluc()
 
-# Oficiálne platformy: názov -> (kľúčové slová v názve poskytovateľa z TMDB, šablóna odkazu)
 PLATFORMY = {
     "Netflix": (["netflix"], "https://www.netflix.com/search?q={q}"),
     "Max": (["max", "hbo"], "https://www.google.com/search?q=site:max.com+{q}"),
@@ -34,14 +33,13 @@ PLATFORMY = {
     "Apple TV+": (["apple tv"], "https://www.google.com/search?q=site:tv.apple.com+{q}"),
 }
 
-# Legálne bezplatné / verejnoprávne zdroje
 LEGALNE_ZDROJE = {
     "JOJ Play": ("Slovenské TV archívy, časť obsahu zadarmo s reklamou.", "https://www.google.com/search?q=site:play.joj.sk+{q}"),
     "RTVS / STVR": ("Verejnoprávny archív, slovenský dabing a tvorba.", "https://www.google.com/search?q=site:rtvs.sk+{q}"),
     "Prima+": ("České filmy a seriály, časť zadarmo s reklamou.", "https://www.google.com/search?q=site:iprima.cz+{q}"),
     "Voyo (Markíza)": ("Slovenský obsah, časť zdarma, väčšina v predplatnom.", "https://www.google.com/search?q=site:voyo.markiza.sk+{q}"),
     "Internet Archive": ("Voľné diela (public domain), legálne zadarmo.", "https://archive.org/search?query={q}&and[]=mediatype%3A%22movies%22"),
-    "Knižničné služby (Kanopy)": ("Zadarmo cez členstvo vo vašej knižnici, ak ho ponúka.", "https://www.kanopy.com/en/search?query={q}"),
+    "Knižničné služby (Kanopy)": ("Zadarmo cez členstvo vo vašej knižnici.", "https://www.kanopy.com/en/search?query={q}"),
 }
 
 JAZYKY = {"sk": "slovenčina", "cs": "čeština", "en": "angličtina", "de": "nemčina", "fr": "francúzština",
@@ -49,9 +47,6 @@ JAZYKY = {"sk": "slovenčina", "cs": "čeština", "en": "angličtina", "de": "ne
           "hu": "maďarčina", "ru": "ruština"}
 
 
-# ---------------------------------------------------------------------------
-# TMDB volania & Pomocné funkcie
-# ---------------------------------------------------------------------------
 @st.cache_data(ttl=3600, show_spinner=False)
 def hladaj(dotaz: str, api_key: str) -> list[dict]:
     r = requests.get(
@@ -117,134 +112,130 @@ def alternativne_odkazy(nazov: str) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
-# Bočný panel – filtre
-# ---------------------------------------------------------------------------
+# Bočný panel
 with st.sidebar:
     st.header("🎛️ Filtre")
-
     typ_filter = st.radio("Typ obsahu", ["Všetko", "Filmy", "Seriály"])
     krajiny_vyber = st.multiselect("Krajina dostupnosti", ["SK", "CZ"], default=["SK", "CZ"])
     vybrane_platformy = st.multiselect("Oficiálne platformy", list(PLATFORMY), default=list(PLATFORMY))
-    iba_dostupne = st.checkbox("Iba tituly dostupné na vybraných platformách", value=False)
+    iba_dostupne = st.checkbox("Iba tituly dostupné na platformách", value=False)
     zobraz_legalne = st.checkbox("Zobraziť legálne bezplatné zdroje", value=True)
     max_vysledkov = st.slider("Počet výsledkov", 1, 10, 5)
 
     st.divider()
-    st.subheader("📡 Stav pripojenia")
     if API_KEY:
         st.success("TMDB API kľúč je nastavený.")
     else:
-        st.warning("Chýba `TMDB_API_KEY`.")
-        st.code('# .streamlit/secrets.toml\nTMDB_API_KEY = "váš_kľúč"', language="toml")
+        st.warning("Chýba `TMDB_API_KEY` v Secrets.")
 
-    st.caption("Dostupnosť pochádza z TMDB (dáta JustWatch).")
-
-
-# ---------------------------------------------------------------------------
-# Hlavná časť
-# ---------------------------------------------------------------------------
+# Hlavná stránka
 st.title("🎬 Kde pozrieť film alebo seriál")
-dotaz = st.text_input("Názov filmu alebo seriálu", placeholder="napr. Pán prsteňov, Wednesday, Kolja…")
+
+# Vstupné pole a tlačidlo hneď vedľa seba pre pohodlie
+col_input, col_btn = st.columns([3, 1])
+with col_input:
+    dotaz = st.text_input("Názov filmu alebo seriálu", placeholder="napr. Pán prsteňov…", label_visibility="collapsed")
+with col_btn:
+    spustit = st.button("🔍 Hľadať", use_container_width=True)
 
 if not API_KEY:
-    st.info("Pre fungovanie vyhľadávania doplňte TMDB API kľúč (pozri bočný panel).")
+    st.info("Pre fungovanie vyhľadáwania doplňte TMDB API kľúč v nastaveniach Streamlitu (Secrets).")
     st.stop()
 
-if not dotaz.strip():
-    st.write("Zadajte názov a ukážem vám, kde sa dá legálne pozrieť.")
-    st.stop()
-
-try:
-    with st.spinner("Hľadám…"):
-        vysledky = hladaj(dotaz.strip(), API_KEY)
-except requests.exceptions.RequestException as e:
-    st.error(f"Nepodarilo sa kontaktovať TMDB: {e}")
-    st.stop()
-
-if typ_filter == "Filmy":
-    vysledky = [v for v in vysledky if v["media_type"] == "movie"]
-elif typ_filter == "Seriály":
-    vysledky = [v for v in vysledky if v["media_type"] == "tv"]
-
-zobrazene = 0
-for v in vysledky:
-    if zobrazene >= max_vysledkov:
-        break
-
-    typ, tmdb_id = v["media_type"], v["id"]
-    nazov = v.get("title") or v.get("name") or "Bez názvu"
-    rok = (v.get("release_date") or v.get("first_air_date") or "")[:4]
+# Vyhľadáva sa buď po stlačení tlačidla alebo ak už je niečo napísané
+if spustit or dotaz:
+    if not dotaz.strip():
+        st.warning("Zadajte názov filmu.")
+        st.stop()
 
     try:
-        prov = poskytovatelia(typ, tmdb_id, API_KEY)
-        det = detail(typ, tmdb_id, API_KEY)
-    except requests.exceptions.RequestException:
-        prov, det = {}, {}
+        with st.spinner("Hľadám…"):
+            vysledky = hladaj(dotaz.strip(), API_KEY)
+    except requests.exceptions.RequestException as e:
+        st.error(f"Nepodarilo sa kontaktovať TMDB: {e}")
+        st.stop()
 
-    dost = {k: x for k, x in dostupnost(prov, krajiny_vyber).items() if k in vybrane_platformy}
-    if iba_dostupne and not dost:
-        continue
-    zobrazene += 1
+    if typ_filter == "Filmy":
+        vysledky = [v for v in vysledky if v["media_type"] == "movie"]
+    elif typ_filter == "Seriály":
+        vysledky = [v for v in vysledky if v["media_type"] == "tv"]
 
-    with st.container(border=True):
-        c1, c2 = st.columns([1, 3])
+    zobrazene = 0
+    for v in vysledky:
+        if zobrazene >= max_vysledkov:
+            break
 
-        with c1:
-            if v.get("poster_path"):
-                st.image(IMG_BASE + v["poster_path"], use_container_width=True)
-            else:
-                st.write("🖼️ bez plagátu")
+        typ, tmdb_id = v["media_type"], v["id"]
+        nazov = v.get("title") or v.get("name") or "Bez názvu"
+        rok = (v.get("release_date") or v.get("first_air_date") or "")[:4]
 
-        with c2:
-            st.subheader(f"{nazov} ({rok})" if rok else nazov)
-            st.caption(("🎞️ Film" if typ == "movie" else "📺 Seriál")
-                       + (f" · ⭐ {v['vote_average']:.1f}/10" if v.get("vote_average") else ""))
-            if v.get("overview"):
-                st.write(v["overview"])
+        try:
+            prov = poskytovatelia(typ, tmdb_id, API_KEY)
+            det = detail(typ, tmdb_id, API_KEY)
+        except requests.exceptions.RequestException:
+            prov, det = {}, {}
 
-            # Jazyky
-            povodny = JAZYKY.get(v.get("original_language", ""), v.get("original_language", "neznámy"))
-            hovorene = [JAZYKY.get(j.get("iso_639_1"), j.get("english_name", "")) for j in det.get("spoken_languages", [])]
-            st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk vo filme:** {', '.join(hovorene)}" if hovorene else ""))
+        dost = {k: x for k, x in dostupnost(prov, krajiny_vyber).items() if k in vybrane_platformy}
+        if iba_dostupne and not dost:
+            continue
+        zobrazene += 1
 
-            # Alternatívne odkazy (tlačidlá)
-            st.markdown("**Hľadať ďalej:**")
-            for popis, url in alternativne_odkazy(nazov).items():
-                st.link_button(popis, url)
+        with st.container(border=True):
+            c1, c2 = st.columns([1, 3])
 
-            tab1, tab2 = st.tabs(["✅ Oficiálne platformy", "🆓 Legálne bezplatné zdroje"])
-
-            with tab1:
-                if not vybrane_platformy:
-                    st.write("Vyberte aspoň jednu platformu v bočnom paneli.")
-                for platforma in vybrane_platformy:
-                    sablona = PLATFORMY[platforma][1]
-                    p1, p2 = st.columns([2, 3])
-                    if platforma in dost:
-                        info = dost[platforma]
-                        p1.markdown(f"**{platforma}** ✅")
-                        p2.markdown(
-                            f"{', '.join(sorted(info['typy']))} ({', '.join(sorted(info['krajiny']))}) · "
-                            f"[Otvoriť]({odkaz(sablona, nazov)})"
-                        )
-                    else:
-                        p1.markdown(f"**{platforma}** ➖")
-                        p2.markdown(f"Nenájdené v zvolených krajinách · [Hľadať ručne]({odkaz(sablona, nazov)})")
-
-                kr = krajiny_vyber[0] if krajiny_vyber else "SK"
-                st.markdown(f"🔎 [Všetky možnosti na JustWatch]({justwatch_odkaz(nazov, kr)})")
-
-            with tab2:
-                if not zobraz_legalne:
-                    st.write("Zapnite zobrazenie v bočnom paneli.")
+            with c1:
+                if v.get("poster_path"):
+                    st.image(IMG_BASE + v["poster_path"], use_container_width=True)
                 else:
-                    for zdroj, (popis, sablona) in LEGALNE_ZDROJE.items():
-                        z1, z2 = st.columns([2, 3])
-                        z1.markdown(f"**{zdroj}**")
-                        z2.markdown(f"{popis} [Hľadať]({odkaz(sablona, nazov)})")
+                    st.write("🖼️ bez plagátu")
 
-if zobrazene == 0:
-    st.warning("Nič sa nenašlo. Skúste iný názov alebo upravte filtre.")
+            with c2:
+                st.subheader(f"{nazov} ({rok})" if rok else nazov)
+                st.caption(("🎞️ Film" if typ == "movie" else "📺 Seriál")
+                           + (f" · ⭐ {v['vote_average']:.1f}/10" if v.get("vote_average") else ""))
+                if v.get("overview"):
+                    st.write(v["overview"])
+
+                povodny = JAZYKY.get(v.get("original_language", ""), v.get("original_language", "neznámy"))
+                hovorene = [JAZYKY.get(j.get("iso_639_1"), j.get("english_name", "")) for j in det.get("spoken_languages", [])]
+                st.markdown(f"**Pôvodný jazyk:** {povodny}" + (f" · **Zvuk:** {', '.join(hovorene)}" if hovorene else ""))
+
+                st.markdown("**Hľadať ďalej:**")
+                for popis, url in alternativne_odkazy(nazov).items():
+                    st.link_button(popis, url)
+
+                tab1, tab2 = st.tabs(["✅ Oficiálne platformy", "🆓 Legálne bezplatné zdroje"])
+
+                with tab1:
+                    if not vybrane_platformy:
+                        st.write("Vyberte aspoň jednu platformu v bočnom paneli.")
+                    for platforma in vybrane_platformy:
+                        sablona = PLATFORMY[platforma][1]
+                        p1, p2 = st.columns([2, 3])
+                        if platforma in dost:
+                            info = dost[platforma]
+                            p1.markdown(f"**{platforma}** ✅")
+                            p2.markdown(
+                                f"{', '.join(sorted(info['typy']))} ({', '.join(sorted(info['krajiny']))}) · "
+                                f"[Otvoriť]({odkaz(sablona, nazov)})"
+                            )
+                        else:
+                            p1.markdown(f"**{platforma}** ➖")
+                            p2.markdown(f"Nenájdené · [Hľadať ručne]({odkaz(sablona, nazov)})")
+
+                    kr = krajiny_vyber[0] if krajiny_vyber else "SK"
+                    st.markdown(f"🔎 [Všetky možnosti na JustWatch]({justwatch_odkaz(nazov, kr)})")
+
+                with tab2:
+                    if not zobraz_legalne:
+                        st.write("Zapnite zobrazenie v bočnom paneli.")
+                    else:
+                        for zdroj, (popis, sablona) in LEGALNE_ZDROJE.items():
+                            z1, z2 = st.columns([2, 3])
+                            z1.markdown(f"**{zdroj}**")
+                            z2.markdown(f"{popis} [Hľadať]({odkaz(sablona, nazov)})")
+
+    if zobrazene == 0:
+        st.warning("Nič sa nenašlo. Skúste iný názov alebo upravte filtre.")
 
 st.caption("Údaje poskytuje TMDB.")
